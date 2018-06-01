@@ -67,7 +67,8 @@ object PipelinesApiRequestFactory {
                                       computeServiceAccount: String,
                                       labels: Labels,
                                       preemptible: Boolean,
-                                      jobShell: String) {
+                                      jobShell: String,
+                                      encryptedDockerCredentials: Option[String]) {
     def literalInputs = inputOutputParameters.literalInputParameters
     def inputParameters = inputOutputParameters.fileInputParameters
     def outputParameters = inputOutputParameters.fileOutputParameters

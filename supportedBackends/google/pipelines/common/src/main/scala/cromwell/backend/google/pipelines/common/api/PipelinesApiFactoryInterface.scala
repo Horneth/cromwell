@@ -9,6 +9,7 @@ object PipelinesApiFactoryInterface {
   val GenomicsScope = "https://www.googleapis.com/auth/genomics"
   val ComputeScope = "https://www.googleapis.com/auth/compute"
   val StorageFullControlScope = "https://www.googleapis.com/auth/devstorage.full_control"
+  val KmsScope = "https://www.googleapis.com/auth/cloudkms"
 }
 
 /**

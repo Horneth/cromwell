@@ -7,6 +7,7 @@ import better.files.File
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
 import com.google.api.client.http.HttpResponseException
 import com.google.api.client.json.jackson2.JacksonFactory
+import com.google.api.services.cloudkms.v1.CloudKMS
 import com.google.api.services.storage.StorageScopes
 import com.google.auth.Credentials
 import com.google.auth.http.HttpTransportFactory
@@ -61,6 +62,31 @@ object GoogleAuthMode {
     }
   }
 
+  private val kms = {
+    import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
+    import com.google.api.services.cloudkms.v1.CloudKMSScopes
+
+    val credential = GoogleCredential.getApplicationDefault(httpTransport, jsonFactory)
+
+    // Depending on the environment that provides the default credentials (e.g. Compute Engine, App
+    // Engine), the credentials may require us to specify the scopes we need explicitly.
+    // Check for this case, and inject the scope if required.
+    val scopedCredentials = if (credential.createScopedRequired) credential.createScoped(CloudKMSScopes.all) else credential
+
+    new CloudKMS.Builder(httpTransport, jsonFactory, scopedCredentials)
+      .setApplicationName("cromwell")
+      .build()
+  }
+  private val keyRingId = "tj-private-dockerhub-test"
+  private val locationId = "global"
+  val cryptoKeyId = "tj-private-dockerhub-key"
+  val keyName = s"projects/broad-dsde-cromwell-perf/locations/$locationId/keyRings/$keyRingId/cryptoKeys/$cryptoKeyId"
+  def encryptKms(plainText: String) = {
+    import com.google.api.services.cloudkms.v1.model.EncryptRequest
+    val request = new EncryptRequest().encodePlaintext(plainText.toCharArray.map(_.toByte))
+    val response = kms.projects.locations.keyRings.cryptoKeys.encrypt(keyName, request).execute
+    response.getCiphertext
+  }
 }
 
 

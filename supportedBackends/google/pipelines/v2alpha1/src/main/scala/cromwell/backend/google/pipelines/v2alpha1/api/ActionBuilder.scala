@@ -1,10 +1,11 @@
 package cromwell.backend.google.pipelines.v2alpha1.api
 
 import akka.http.scaladsl.model.ContentTypes
-import com.google.api.services.genomics.v2alpha1.model.{Action, Mount}
+import com.google.api.services.genomics.v2alpha1.model.{Action, Mount, Secret}
 import cromwell.backend.google.pipelines.v2alpha1.api.ActionBuilder.Gsutil.ContentTypeTextHeader
 import cromwell.backend.google.pipelines.v2alpha1.api.ActionBuilder.Labels._
 import cromwell.backend.google.pipelines.v2alpha1.api.ActionFlag.ActionFlag
+import cromwell.cloudsupport.gcp.auth.GoogleAuthMode
 import mouse.all._
 
 import scala.collection.JavaConverters._
@@ -48,13 +49,23 @@ object ActionBuilder {
   def withImage(image: String) = new Action()
     .setImageUri(image)
 
-  def userAction(docker: String, scriptContainerPath: String, mounts: List[Mount], jobShell: String): Action = {
+  def userAction(docker: String,
+                 scriptContainerPath: String,
+                 mounts: List[Mount],
+                 jobShell: String,
+                 credential: Option[String]): Action = {
+    val secret = credential.map({ c =>
+      new Secret()
+        .setKeyName(GoogleAuthMode.keyName)
+        .setCipherText(c)
+    })
     new Action()
       .setImageUri(docker)
       .setCommands(List(jobShell, scriptContainerPath).asJava)
       .setMounts(mounts.asJava)
       .setEntrypoint("")
       .setLabels(Map(Key.Tag -> Value.UserAction).asJava)
+      .setCredentials(secret.orNull)
   }
 
   def gsutilAsText(command: String*)(mounts: List[Mount] = List.empty, flags: List[ActionFlag] = List.empty, labels: Map[String, String] = Map.empty): Action = {

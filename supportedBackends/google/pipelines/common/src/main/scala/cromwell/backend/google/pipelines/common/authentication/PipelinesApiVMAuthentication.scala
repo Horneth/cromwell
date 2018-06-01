@@ -35,7 +35,7 @@ object PipelinesApiDockerCredentials {
 /**
  * Authentication information to pull docker images as the user.
  */
-class PipelinesApiDockerCredentials(account: String, token: String) extends DockerCredentials(account, token) with PipelinesApiAuthObject {
+case class PipelinesApiDockerCredentials(override val account: String, override val token: String) extends DockerCredentials(account, token) with PipelinesApiAuthObject {
   override val context = "docker"
   override val map = Map(
     "account" -> JsString(account),

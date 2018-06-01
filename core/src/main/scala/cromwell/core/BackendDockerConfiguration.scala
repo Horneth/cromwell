@@ -3,10 +3,14 @@ package cromwell.core
 import com.typesafe.config.Config
 import cromwell.core.ConfigUtil._
 
+object DockerCredentials {
+  def unapply(arg: DockerCredentials): Option[(String, String)] = Option(arg.account -> arg.token)
+}
+
 /**
   * Encapsulate docker credential information.
   */
-case class DockerCredentials(account: String, token: String)
+class DockerCredentials(val account: String, val token: String)
 
 case class BackendDockerConfiguration(dockerCredentials: Option[DockerCredentials])
 
@@ -24,7 +28,7 @@ object BackendDockerConfiguration {
       _ = dockerConf.warnNotRecognized(dockerKeys, "dockerhub")
       account <- dockerConf.validateString("account").toOption
       token <- dockerConf.validateString("token").toOption
-    } yield DockerCredentials(account, token)
+    } yield new DockerCredentials(account, token)
 
     new BackendDockerConfiguration(dockerConf)
   }
