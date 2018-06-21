@@ -24,6 +24,9 @@ object MetadataDatabaseAccessSpec {
   val Workflow1Name = "test1"
   val Workflow2Name = "test2"
   val Workflow3Name = "test3"
+
+  val ParentWorkflowName = "test-parentWorkflow"
+  val SubworkflowName = "test-subworkflow"
 }
 
 class MetadataDatabaseAccessSpec extends FlatSpec with Matchers with ScalaFutures with BeforeAndAfterAll with Mockito {
@@ -65,12 +68,26 @@ class MetadataDatabaseAccessSpec extends FlatSpec with Matchers with ScalaFuture
 
       val workflowKey = MetadataKey(workflowId, jobKey = None, key = null)
       def keyAndValue(name: String) = Array(
-        (WorkflowMetadataKeys.StartTime, OffsetDateTime.now.toString),
+        (WorkflowMetadataKeys.SubmissionTime, OffsetDateTime.now.toString),
         (WorkflowMetadataKeys.Status, WorkflowSubmitted.toString),
-        (WorkflowMetadataKeys.Name, name)
+        (WorkflowMetadataKeys.Name, name),
+        (WorkflowMetadataKeys.StartTime, OffsetDateTime.now.toString)
       ) ++ labelMetadata
 
       publishMetadataEvents(workflowKey, keyAndValue(name)).map(_ => workflowId)
+    }
+
+    def subworkflowMetadata(parentWorkflowId: WorkflowId, subworkflowName: String): Future[WorkflowId] = {
+      val workflowId = WorkflowId.randomId()
+      val workflowKey = MetadataKey(workflowId, jobKey = None, key = null)
+      val metadataKeys = Array(
+        (WorkflowMetadataKeys.Status, WorkflowRunning.toString),
+        (WorkflowMetadataKeys.Name, subworkflowName),
+        (WorkflowMetadataKeys.StartTime, OffsetDateTime.now.toString),
+        (WorkflowMetadataKeys.ParentWorkflowId, parentWorkflowId.toString)
+      )
+
+      publishMetadataEvents(workflowKey, metadataKeys).map(_ => workflowId)
     }
 
     it should "return pagination metadata only when page and pagesize query params are specified" taggedAs DbmsTest in {
@@ -261,6 +278,14 @@ class MetadataDatabaseAccessSpec extends FlatSpec with Matchers with ScalaFuture
             case (y, n) => fail(s"Found ${y.size} earlier workflows and ${n.size} later")
           }
         }
+        // Filter by submission time
+        _ <- dataAccess.queryWorkflowSummaries(WorkflowQueryParameters(Seq(
+          WorkflowQueryKey.SubmissionTime.name -> workflowQueryResult2.start.get.toString))) map { case (response, _) =>
+          response.results partition { r => r.submission.isDefined && r.submission.get.compareTo(workflowQueryResult2.submission.get) <= 0 } match {
+            case (y, n) if y.nonEmpty && n.isEmpty => // good
+            case (y, n) => fail(s"Found ${y.size} earlier workflows and ${n.size} later")
+          }
+        }
       } yield ()).futureValue(Timeout(scaled(Span(30, Seconds))), Interval(scaled(Span(500, Millis))))
     }
 
@@ -307,6 +332,35 @@ class MetadataDatabaseAccessSpec extends FlatSpec with Matchers with ScalaFuture
         _ <- upsertLabelAndValidate(workflowId, "")
 
       } yield ()).futureValue(Timeout(scaled(Span(30, Seconds))), Interval(scaled(Span(500, Millis))))
+    }
+
+    it should "include/exclude subworklows" taggedAs DbmsTest in {
+      def changeParentToRunningState(id: WorkflowId): Future[Unit] = {
+        val workflowKey = MetadataKey(id, jobKey = None, key = null)
+        val keyAndValue = Array((WorkflowMetadataKeys.Status, WorkflowRunning.toString))
+
+        publishMetadataEvents(workflowKey, keyAndValue)
+      }
+
+      (for {
+        parentWorkflowId <- baseWorkflowMetadata(ParentWorkflowName)
+        _ <- changeParentToRunningState(parentWorkflowId)
+        // associate subworkflow to parent
+        _ <- subworkflowMetadata(parentWorkflowId, SubworkflowName)
+        // refresh metadata
+        _ <- dataAccess.refreshWorkflowMetadataSummaries()
+        // include subworkflows
+        _ <- dataAccess.queryWorkflowSummaries(WorkflowQueryParameters(Seq(WorkflowQueryKey.IncludeSubworkflows.name -> true.toString))) map { case (resp, _) =>
+          val resultByName = resp.results groupBy (_.name)
+          resultByName.keys.toSet.flatten should contain(SubworkflowName)
+        }
+        // exclude subworkflows
+        _ <- dataAccess.queryWorkflowSummaries(WorkflowQueryParameters(Seq(WorkflowQueryKey.IncludeSubworkflows.name -> false.toString))) map {
+          case (resp, _) =>
+            val resultByName = resp.results groupBy (_.name)
+            resultByName.keys.toSet.flatten should not contain SubworkflowName
+        }
+      } yield()).futureValue
     }
 
     it should "close the database" taggedAs DbmsTest in {
